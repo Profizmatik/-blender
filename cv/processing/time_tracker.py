@@ -4,9 +4,9 @@ from enum import Enum
 import numpy as np
 
 from cv.core.frame_data import FrameMetaData
+from cv.core.logging import ArgsType, KwargsType, ResultType, log, log_params
 from cv.core.math import rectangular_assignment
 from cv.processing.stereopairs_comporator import CompareResult
-from cv.core.logging import log, ResultType, ArgsType, KwargsType, log_params
 
 
 def convert_to_corner_coords(bboxes: np.ndarray) -> np.ndarray:

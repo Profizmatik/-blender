@@ -1,7 +1,7 @@
 import cv2
 
 from cv.core.frame_data import FrameContext
-from cv.core.logging import log, ArgsType, KwargsType
+from cv.core.logging import ArgsType, KwargsType, log
 
 
 def log_stereo_pair(

@@ -1,7 +1,7 @@
 import csv
 
-from cv.core.world_data import WorldContext
 from cv.core.logging import log
+from cv.core.world_data import WorldContext
 
 
 class CSVResultHandlerNode:

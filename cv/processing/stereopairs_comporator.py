@@ -4,8 +4,8 @@ from enum import Enum
 import numpy as np
 
 from cv.core.frame_data import FrameMetaData
+from cv.core.logging import ArgsType, KwargsType, log
 from cv.core.math import INF, rectangular_assignment
-from cv.core.logging import log, ArgsType, KwargsType
 
 
 def create_distance_matrix(

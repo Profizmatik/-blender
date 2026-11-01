@@ -1,6 +1,7 @@
-import logging
 import functools
-from typing import Callable, TypeVar, ParamSpec, Any
+import logging
+from collections.abc import Callable
+from typing import Any, ParamSpec, TypeVar
 
 P = ParamSpec("P")
 R = TypeVar("R")
