@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 
 from cv.core.frame_data import FrameContext, FrameMetaData
+from cv.core.logging import log
 
 type ProcessFrameFn = Callable[[FrameContext], FrameMetaData]
 
@@ -21,10 +22,11 @@ class ProcessFramesNode:
         return metadata1, metadata2
 
 
+@log(title="process frame")
 def process_frame(context: FrameContext) -> FrameMetaData:
     hsv = cv2.cvtColor(context.processed, cv2.COLOR_BGR2HSV)
-    lower_bright = np.array([0, 100, 100])
-    upper_bright = np.array([180, 255, 255])
+    lower_bright = np.array([0, 0, 30])
+    upper_bright = np.array([255, 255, 255])
     range1 = (np.array([0, 120, 70]), np.array([10, 255, 255]))
     range2 = (np.array([170, 120, 70]), np.array([180, 255, 255]))
     mask1 = cv2.inRange(hsv, *range1)

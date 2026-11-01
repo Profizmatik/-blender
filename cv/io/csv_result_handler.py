@@ -1,6 +1,7 @@
 import csv
 
 from cv.core.world_data import WorldContext
+from cv.core.logging import log
 
 
 class CSVResultHandlerNode:
@@ -14,6 +15,7 @@ class CSVResultHandlerNode:
         self._writer = csv.writer(self._file)
         self._writer.writerow(["Frame_id", "Object_id", "X", "Y", "Z"])
 
+    @log(title="csv result handler", log_fn=lambda r, a, k: "success")
     def process(self, world_context: WorldContext) -> None:
         if self._writer is None:
             raise RuntimeError()

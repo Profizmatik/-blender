@@ -6,6 +6,7 @@ import numpy as np
 from cv.core.frame_data import FrameMetaData
 from cv.core.math import rectangular_assignment
 from cv.processing.stereopairs_comporator import CompareResult
+from cv.core.logging import log, ResultType, ArgsType, KwargsType, log_params
 
 
 def convert_to_corner_coords(bboxes: np.ndarray) -> np.ndarray:
@@ -153,6 +154,12 @@ class TrackResult:
     )
 
 
+def log_tracker_update(_: ResultType, args: ArgsType, kwargs: KwargsType) -> str:
+    clean_args = args[1:] if args else args
+
+    return log_params(_, clean_args, kwargs)
+
+
 class TimeTrackingNode:
     def __init__(
         self, min_iou: float, method: TrackMethod = TrackMethod.GLOBAL
@@ -226,6 +233,7 @@ class TimeTrackingNode:
 
         return assign_idx
 
+    @log(title="update tracking history", log_fn=log_tracker_update)
     def _update_history(self, track: Track, track_ids: np.ndarray) -> None:
         self._tracks_history.track = track
         self._tracks_history.track_ids = track_ids
@@ -251,6 +259,7 @@ class TimeTrackingNode:
 
         return metadata1, metadata2
 
+    @log(title="time tracking")
     def process(
         self,
         metadata1: FrameMetaData,

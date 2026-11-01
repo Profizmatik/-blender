@@ -4,6 +4,7 @@ import numpy as np
 
 from cv.core.frame_data import FrameMetaData
 from cv.core.world_data import WorldContext
+from cv.core.logging import log
 
 
 @dataclass
@@ -12,6 +13,7 @@ class TriangulateNode:
     w_mm: float
     baseline: float
 
+    @log(title="triangulator")
     def process(
         self, metadata1: FrameMetaData, metadata2: FrameMetaData
     ) -> WorldContext:

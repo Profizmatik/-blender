@@ -1,6 +1,20 @@
 import cv2
 
 from cv.core.frame_data import FrameContext
+from cv.core.logging import log, ArgsType, KwargsType
+
+
+def log_stereo_pair(
+    stereo_pair: tuple[FrameContext, FrameContext], _: ArgsType, __: KwargsType
+) -> str:
+    if stereo_pair is None:
+        return "end"
+    return (
+        "left: "
+        + repr(stereo_pair[0].metadata)
+        + " right: "
+        + repr(stereo_pair[1].metadata)
+    )
 
 
 class VideoSourceNode:
@@ -9,6 +23,7 @@ class VideoSourceNode:
         self.cap_right = cv2.VideoCapture(right_video_path)
         self._frame_id = 0
 
+    @log(title="video source", log_fn=log_stereo_pair)
     def process(self) -> tuple[FrameContext, FrameContext] | None:
         ret_l, frame_l = self.cap_left.read()
         ret_r, frame_r = self.cap_right.read()

@@ -21,4 +21,4 @@ class FrameContext:
         self.original.flags.writeable = False
         self.processed: np.ndarray = image.copy()
 
-        self.metadata: FrameMetaData = FrameMetaData(frame_id, image.shape)
+        self.metadata: FrameMetaData = FrameMetaData(frame_id, image.shape[:2])

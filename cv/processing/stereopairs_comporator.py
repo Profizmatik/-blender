@@ -5,7 +5,7 @@ import numpy as np
 
 from cv.core.frame_data import FrameMetaData
 from cv.core.math import INF, rectangular_assignment
-from cv.core.logging import logg
+from cv.core.logging import log, ArgsType, KwargsType
 
 
 def create_distance_matrix(
@@ -42,6 +42,14 @@ class CompareResult:
     unmatched_right: np.ndarray = field(default_factory=lambda: np.empty(shape=(0,)))
 
 
+def log_stereo_compare_result(
+    result: tuple[FrameMetaData, FrameMetaData, CompareResult],
+    _: ArgsType,
+    __: KwargsType,
+) -> str:
+    return repr(result[2])
+
+
 class StereoPairComparator:
     def __init__(
         self,
@@ -53,14 +61,12 @@ class StereoPairComparator:
         self.max_distance = max_distance
         self.epipolar_threshold = epipolar_threshold
 
-    @logg()
     def _global_compare(self, matrix: np.ndarray) -> CompareResult:
         left_idx, right_idx, unmatched_left, unmatched_right = rectangular_assignment(
             matrix, self.max_distance
         )
         return CompareResult(left_idx, right_idx, unmatched_left, unmatched_right)
 
-    @logg()
     def _greedy_compare(self, matrix: np.ndarray) -> CompareResult:
         flat_indices = np.argsort(matrix.flatten())
         left_indices, right_indices = np.unravel_index(flat_indices, matrix.shape)
@@ -95,6 +101,7 @@ class StereoPairComparator:
             case CompareMethod.GREEDY:
                 return self._greedy_compare(matrix)
 
+    @log(title="stereo compare", log_fn=log_stereo_compare_result)
     def process(
         self, metadata1: FrameMetaData, metadata2: FrameMetaData
     ) -> tuple[FrameMetaData, FrameMetaData, CompareResult]:
