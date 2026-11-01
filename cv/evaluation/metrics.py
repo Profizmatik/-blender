@@ -14,10 +14,10 @@ def calculate_metrics(
     proc_distance = np.linalg.norm(proc_arr, axis=1)
 
     errors = TrajectoryErrors(
-        distance=true_distance - proc_distance,
-        x=true_arr[:, 0] - proc_arr[:, 0],
-        y=true_arr[:, 1] - proc_arr[:, 1],
-        z=true_arr[:, 2] - proc_arr[:, 2],
+        distance=proc_distance - true_distance,
+        x=proc_arr[:, 0] - true_arr[:, 0],
+        y=proc_arr[:, 1] - true_arr[:, 1],
+        z=proc_arr[:, 2] - true_arr[:, 2],
     )
 
     data = TrajectoryData(
