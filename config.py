@@ -19,6 +19,7 @@ class CameraConfig:
         self.baseline = float(camera_data.get("baseline", 30))
         self.focal_length_mm = float(camera_data.get("focal_length_mm", 50))
         self.sensor_width_mm = float(camera_data.get("sensor_width_mm", 36))
+        self.left_camera_pos = list(camera_data.get("left_camera_pos", [0, 0, 0]))
 
 
 class VideoConfig:

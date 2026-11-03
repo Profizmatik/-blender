@@ -1,6 +1,6 @@
 from config import config
 from cv.core.pipeline import Pipeline
-from cv.evaluation.flows import analize_two_objects
+from cv.evaluation.flows import analize
 from cv.geometry.triangulator import TriangulateNode
 from cv.io.csv_result_handler import CSVResultHandlerNode
 from cv.io.video_source import VideoSourceNode
@@ -42,6 +42,4 @@ if __name__ == "__main__":
         )
         pipeline.run()
 
-    analize_two_objects(
-        config.path.true_data, config.path.proc_data, config.path.output_metrics
-    )
+    analize(config.path.true_data, config.path.proc_data, config.path.output_metrics)
