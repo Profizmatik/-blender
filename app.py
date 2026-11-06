@@ -1,14 +1,18 @@
 from config import config
 from cv.core.pipeline import Pipeline
-from cv.evaluation.flows import analize
 from cv.geometry.triangulator import TriangulateNode
 from cv.io.csv_result_handler import CSVResultHandlerNode
 from cv.io.video_source import VideoSourceNode
-from cv.processing.frame_processor import ProcessFramesNode, process_frame
+from cv.processing.frame_processor import ProcessFramesNode, detect_by_color, ColorRange
 from cv.processing.stereopairs_comporator import CompareMethod, StereoPairComparator
 from cv.processing.time_tracker import TimeTrackingNode, TrackMethod
 
 if __name__ == "__main__":
+    color_range0: ColorRange = ((0, 0, 30), (255, 255, 255))
+    color_range1: ColorRange = ((0, 120, 70), (10, 255, 255))
+    color_range2: ColorRange = ((170, 120, 70), (180, 255, 255))
+    color_ranges: list[ColorRange] = [color_range0, color_range1, color_range2]
+
     with CSVResultHandlerNode(config.path.proc_data) as csv_result_handler_node:
         pipeline = (
             Pipeline()
@@ -18,7 +22,7 @@ if __name__ == "__main__":
                 )
             )
             .set_endpoint()
-            .add(ProcessFramesNode(process_frame))
+            .add(ProcessFramesNode(detect_by_color(color_ranges)))
             .add(
                 StereoPairComparator(
                     config.stereo_compare.max_distance,
@@ -41,5 +45,3 @@ if __name__ == "__main__":
             .add(csv_result_handler_node)
         )
         pipeline.run()
-
-    analize(config.path.true_data, config.path.proc_data, config.path.output_metrics)

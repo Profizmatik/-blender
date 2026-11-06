@@ -1,9 +1,12 @@
 import numpy as np
 
 from cv.core.math import INF
-from cv.processing.frame_processor import process_frame
+from cv.processing.frame_processor import detect_by_color, ColorRange
 from cv.core.frame_data import FrameContext
 import cv2
+
+color_range: ColorRange = ((0, 0, 30), (255, 255, 255))
+process_frame = detect_by_color([color_range])
 
 
 def test_basic_mask_detection():
