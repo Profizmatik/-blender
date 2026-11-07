@@ -1,4 +1,4 @@
-from typing import Callable, Sequence
+from typing import Callable, Sequence, cast
 from dataclasses import dataclass
 
 import cv2
@@ -6,6 +6,8 @@ import numpy as np
 
 from cv.core.frame_data import FrameContext, FrameMetaData
 from cv.core.logging import log
+from ultralytics import YOLO
+from ultralytics.engine.results import Results
 
 type ProcessFrameFn = Callable[[FrameContext], FrameMetaData]
 
@@ -64,12 +66,43 @@ def detect_by_color(color_ranges: list[ColorRange]) -> ProcessFrameFn:
         )
         return context.metadata
 
-    @log(title="process frame")
+    @log(title="color detection")
     def process_frame(context: FrameContext) -> FrameMetaData:
         hsv = cv2.cvtColor(context.processed, cv2.COLOR_BGR2HSV)
         mask = create_mask(hsv)
 
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         return construct_metadata(context, contours)
+
+    return process_frame
+
+
+def detect_by_yolo(
+    model: YOLO, allowed_classes: list[int] | None = None
+) -> ProcessFrameFn:
+    @log(title="yolo detection")
+    def process_frame(context: FrameContext) -> FrameMetaData:
+        results = cast(
+            list[Results],
+            model.predict(context.processed, classes=allowed_classes, verbose=False),
+        )
+        if not results:
+            return context.metadata
+
+        result: Results = results[0]
+
+        if result.boxes is None or len(result.boxes) == 0:
+            return context.metadata
+
+        bboxes_array: np.ndarray = cast(np.ndarray, result.boxes.xywhn)
+
+        ids_array = np.arange(len(bboxes_array), dtype=np.int64)
+
+        context.metadata.bboxes = np.vstack((context.metadata.bboxes, bboxes_array))
+        context.metadata.object_ids = np.hstack(
+            (context.metadata.object_ids, ids_array)
+        )
+
+        return context.metadata
 
     return process_frame
