@@ -1,275 +1,191 @@
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import Enum
+from typing import Self
 
 import numpy as np
 
-from cv.core.frame_data import FrameMetaData
-from cv.core.logging import ArgsType, KwargsType, ResultType, log, log_params
-from cv.core.math import rectangular_assignment
-from cv.processing.stereopairs_comporator import CompareResult
+from cv.core.logging import log
+from cv.core.math import (
+    INF,
+    create_distance_matrix,
+    rectangular_assignment,
+)
+from cv.core.world_data import WorldContext
+
+# ----- 3D Tracking -----
+
+Track = np.dtype(
+    [
+        ("age", "i4"),
+        ("id", "i4"),
+        ("position", "f8", (3,)),
+        ("last_pos", "f8", (3,)),
+        ("velocity", "f8", (3,)),
+    ]
+)
+
+type PredictFn = Callable[[np.ndarray], np.ndarray]
 
 
-def convert_to_corner_coords(bboxes: np.ndarray) -> np.ndarray:
-    new_bboxes = np.empty(shape=bboxes.shape)
-
-    new_bboxes[:, :2] = bboxes[:, :2] - bboxes[:, 2:] / 2
-    new_bboxes[:, 2:] = bboxes[:, :2] + bboxes[:, 2:] / 2
-
-    return new_bboxes
-
-
-def create_iou_matrix(prev_bboxes: np.ndarray, curr_bboxes: np.ndarray) -> np.ndarray:
-    corner_prev_bboxes = convert_to_corner_coords(prev_bboxes)
-    corner_curr_bboxes = convert_to_corner_coords(curr_bboxes)
-
-    b1 = corner_prev_bboxes[:, np.newaxis, :]
-    b2 = corner_curr_bboxes[np.newaxis, :, :]
-
-    x_left = np.maximum(b1[..., 0], b2[..., 0])
-    y_top = np.maximum(b1[..., 1], b2[..., 1])
-    x_right = np.minimum(b1[..., 2], b2[..., 2])
-    y_bottom = np.minimum(b1[..., 3], b2[..., 3])
-
-    intersection_area = np.maximum(0, x_right - x_left) * np.maximum(
-        0, y_bottom - y_top
-    )
-
-    area_b1 = (b1[..., 2] - b1[..., 0]) * (b1[..., 3] - b1[..., 1])
-    area_b2 = (b2[..., 2] - b2[..., 0]) * (b2[..., 3] - b2[..., 1])
-
-    union_area = area_b1 + area_b2 - intersection_area
-
-    iou = np.divide(
-        intersection_area,
-        union_area,
-        out=np.zeros_like(union_area),
-        where=union_area > 0,
-    )
-
-    iou = 1 - iou
-    iou[np.isnan(iou)] = 1
-
-    return iou
-
-
-class TrackMethod(Enum):
-    GLOBAL = 0
-    GREEDY = 1
+def linear_predict(tracks: np.ndarray) -> np.ndarray:
+    tracks["position"] += tracks["velocity"]
+    return tracks
 
 
 @dataclass
-class Track:
-    """format:\n
-     left_bboxes:| matched indices | unmatched indices |        -          |\n
-    right_bboxes:| matched indices |         -         | unmatched_indices |
-    """
-
-    left_bboxes: np.ndarray = field(
-        default_factory=lambda: np.empty(shape=(0, 4), dtype=np.float32)
-    )
-    right_bboxes: np.ndarray = field(
-        default_factory=lambda: np.empty(shape=(0, 4), dtype=np.float32)
-    )
-    num_matches: int = 0
-    num_unmatched_left: int = 0
-    num_unmatched_right: int = 0
-    total_detections: int = 0
+class MatchResult:
+    track_idx: np.ndarray
+    curr_idx: np.ndarray
+    unmatched_curr_idx: np.ndarray
 
     @classmethod
-    def create_from_bboxes(
-        cls,
-        left_bboxes: np.ndarray,
-        right_bboxes: np.ndarray,
-        cmp_result: CompareResult,
-    ) -> "Track":
-        num_matches: int = cmp_result.matched_left.size
-        num_unmatched_left: int = cmp_result.unmatched_left.size
-        num_unmatched_right: int = cmp_result.unmatched_right.size
-        total_detections: int = num_matches + num_unmatched_left + num_unmatched_right
-
-        formated_left_bboxes: np.ndarray = np.full(
-            shape=(total_detections, 4), fill_value=np.nan, dtype=np.float32
+    def empty(cls, num_curr: int = 0) -> Self:
+        return cls(
+            np.empty(0, dtype=int),
+            np.empty(0, dtype=int),
+            np.arange(num_curr, dtype=int),
         )
-        formated_right_bboxes: np.ndarray = np.full(
-            shape=(total_detections, 4), fill_value=np.nan, dtype=np.float32
-        )
-
-        if num_matches:
-            formated_left_bboxes[:num_matches] = left_bboxes[cmp_result.matched_left]
-            formated_right_bboxes[:num_matches] = right_bboxes[cmp_result.matched_right]
-
-        if num_unmatched_left:
-            start_idx = num_matches
-            end_idx = start_idx + num_unmatched_left
-            formated_left_bboxes[start_idx:end_idx] = left_bboxes[
-                cmp_result.unmatched_left
-            ]
-
-        if num_unmatched_right:
-            start_idx = num_matches + num_unmatched_left
-            end_idx = start_idx + num_unmatched_right
-            formated_right_bboxes[start_idx:end_idx] = right_bboxes[
-                cmp_result.unmatched_right
-            ]
-
-        return Track(
-            formated_left_bboxes,
-            formated_right_bboxes,
-            num_matches,
-            num_unmatched_left,
-            num_unmatched_right,
-            total_detections,
-        )
-
-    @property
-    def left_mask(self) -> np.ndarray:
-        return ~np.isnan(self.left_bboxes).any(axis=1)
-
-    @property
-    def right_mask(self) -> np.ndarray:
-        return ~np.isnan(self.right_bboxes).any(axis=1)
 
 
 @dataclass
-class TracksHistory:
-    track: Track = field(default_factory=lambda: Track())
-    track_ids: np.ndarray = field(
-        default_factory=lambda: np.empty(shape=(0,), dtype=np.int32)
+class TrackHistory:
+    max_age: int = 0
+    _predict: PredictFn | None = None
+    _history: np.ndarray = field(
+        default_factory=lambda: np.empty(shape=(0,), dtype=Track)
     )
+    _next_id: int = 1
 
+    def get_new_ids(self, count: int) -> np.ndarray:
+        ids = np.arange(self._next_id, self._next_id + count, dtype="i4")
+        self._next_id += count
+        return ids
 
-@dataclass
-class TrackResult:
-    matched_curr_idx: np.ndarray = field(
-        default_factory=lambda: np.empty(shape=(0,), dtype=np.int32)
-    )
-    matched_track_idx: np.ndarray = field(
-        default_factory=lambda: np.empty(shape=(0,), dtype=np.int32)
-    )
-    new_idx: np.ndarray = field(
-        default_factory=lambda: np.empty(shape=(0,), dtype=np.int32)
-    )
-    lost_idx: np.ndarray = field(
-        default_factory=lambda: np.empty(shape=(0,), dtype=np.int32)
-    )
-
-
-def log_tracker_update(_: ResultType, args: ArgsType, kwargs: KwargsType) -> str:
-    clean_args = args[1:] if args else args
-
-    return log_params(_, clean_args, kwargs)
-
-
-class TimeTrackingNode:
-    def __init__(
-        self, min_iou: float, method: TrackMethod = TrackMethod.GLOBAL
+    def _update_history(
+        self, update_tracks: np.ndarray, match_result: MatchResult
     ) -> None:
-        self.method = method
-        self.min_iou = min_iou
+        self._history["age"] += 1
 
-        self._next_id: int = 0
-        self._tracks_history: TracksHistory = TracksHistory()
+        if len(match_result.curr_idx) > 0:
+            new_pos = update_tracks["position"][match_result.curr_idx]
+            old_pos = self._history["last_pos"][match_result.track_idx]
 
-    def _create_iou_matrix(self, track: Track) -> np.ndarray:
-        iou_left = create_iou_matrix(
-            self._tracks_history.track.left_bboxes, track.left_bboxes
-        )
-        iou_right = create_iou_matrix(
-            self._tracks_history.track.right_bboxes, track.right_bboxes
-        )
+            self._history["velocity"][match_result.track_idx] = (
+                new_pos - old_pos
+            ) / self._history["age"][match_result.track_idx][:, np.newaxis]
+            self._history["position"][match_result.track_idx] = new_pos
+            self._history["last_pos"][match_result.track_idx] = new_pos
+            self._history["age"][match_result.track_idx] = 0
 
-        iou_matrix = (iou_left + iou_right) / 2
-        return iou_matrix
+        new_tracks = update_tracks[match_result.unmatched_curr_idx]
+        if len(new_tracks) > 0:
+            self._history = np.concatenate((self._history, new_tracks))
 
-    def _global_tracking(self, iou_matrix: np.ndarray) -> TrackResult:
-        tid, cid, lost, new = rectangular_assignment(iou_matrix)
-        return TrackResult(cid, tid, new, lost)
+    def _delete_old_tracks(self) -> None:
+        self._history = self._history[self._history["age"] <= self.max_age]
 
-    def _greedy_tracking(self, iou_matrix: np.ndarray) -> TrackResult:
-        flat_indices = np.argsort(iou_matrix.flatten())
-        track_indices, curr_indices = np.unravel_index(flat_indices, iou_matrix.shape)
+    def predict(self) -> None:
+        if self._predict is not None and len(self._history) > 0:
+            self._history = self._predict(self._history)
 
-        used_track = set()
-        used_curr = set()
-        track_idx = []
-        curr_idx = []
+    def update(self, world_context: WorldContext, match_result: MatchResult) -> None:
+        num_update_tracks = len(world_context.positions)
+        update_tracks = np.zeros(num_update_tracks, dtype=Track)
 
-        for track_ind, curr_ind in zip(track_indices, curr_indices):
-            if iou_matrix[track_ind, curr_ind] > (1 - self.min_iou):
-                break
-            if track_ind not in used_track and curr_ind not in used_curr:
-                used_track.add(track_ind)
-                used_curr.add(curr_ind)
-                track_idx.append(track_ind)
-                curr_idx.append(curr_ind)
+        if num_update_tracks > 0:
+            update_tracks["id"] = world_context.object_ids
+            update_tracks["position"] = world_context.positions
+            update_tracks["last_pos"] = world_context.positions
 
-        matched_track_idx = np.array(track_idx, dtype=np.int32)
-        matched_curr_idx = np.array(curr_idx, dtype=np.int32)
+        self._update_history(update_tracks, match_result)
+        self._delete_old_tracks()
 
-        all_curr_idx = np.arange(iou_matrix.shape[1])
-        all_track_idx = np.arange(iou_matrix.shape[0])
+    @property
+    def tracks(self) -> np.ndarray:
+        return self._history
 
-        lost_idx = np.setdiff1d(all_track_idx, matched_track_idx)
-        new_idx = np.setdiff1d(all_curr_idx, matched_curr_idx)
+    @property
+    def previous_positions(self) -> np.ndarray:
+        return self._history["position"]
 
-        return TrackResult(matched_curr_idx, matched_track_idx, new_idx, lost_idx)
+
+type MatchFn = Callable[[np.ndarray, float], MatchResult]
+
+
+def global_matching(matrix: np.ndarray, max_val: float) -> MatchResult:
+    num_curr = matrix.shape[1]
+    if matrix.size == 0:
+        return MatchResult.empty(num_curr)
+
+    cost_matrix = np.where(matrix > max_val, INF, matrix)
+    matched_track_ind, matched_curr_ind, *_ = rectangular_assignment(cost_matrix)
+
+    valid_mask = cost_matrix[matched_track_ind, matched_curr_ind] < INF
+    matched_track_ind = matched_track_ind[valid_mask]
+    matched_curr_ind = matched_curr_ind[valid_mask]
+    unmatched_curr_ind = np.setdiff1d(np.arange(num_curr), matched_curr_ind)
+
+    return MatchResult(matched_track_ind, matched_curr_ind, unmatched_curr_ind)
+
+
+class WorldTrackingNode:
+    def __init__(
+        self,
+        match_fn: MatchFn,
+        max_age: int = 0,
+        predict_fn: PredictFn | None = None,
+        max_distance: float = 1.0,
+    ) -> None:
+        self._match = match_fn
+        self._history = TrackHistory(max_age, predict_fn)
+        self.max_distance = max_distance
 
     def _assign_ids(
         self,
-        track: Track,
-        track_result: TrackResult,
-    ) -> np.ndarray:
-        assign_idx = np.zeros(shape=track.total_detections, dtype=np.int32)
-        assign_idx[track_result.matched_curr_idx] = self._tracks_history.track_ids[
-            track_result.matched_track_idx
-        ]
+        match_result: MatchResult,
+        world_context: WorldContext,
+    ) -> WorldContext:
+        num_objects = len(world_context.positions)
+        assigned_ids = np.full(num_objects, -1, dtype="i4")
 
-        if track_result.new_idx.size:
-            new_ids = np.arange(
-                self._next_id, self._next_id + track_result.new_idx.size
+        if len(match_result.curr_idx) > 0:
+            assigned_ids[match_result.curr_idx] = self._history.tracks["id"][
+                match_result.track_idx
+            ]
+
+        num_new = len(match_result.unmatched_curr_idx)
+        if num_new > 0:
+            assigned_ids[match_result.unmatched_curr_idx] = self._history.get_new_ids(
+                num_new
             )
-            assign_idx[track_result.new_idx] = new_ids
-            self._next_id += track_result.new_idx.size
 
-        return assign_idx
+        world_context.object_ids = assigned_ids
+        return world_context
 
-    @log(title="update tracking history", log_fn=log_tracker_update)
-    def _update_history(self, track: Track, track_ids: np.ndarray) -> None:
-        self._tracks_history.track = track
-        self._tracks_history.track_ids = track_ids
+    @log(title="3D tracking")
+    def process(self, world_context: WorldContext) -> WorldContext:
+        self._history.predict()
 
-    def _track(self, iou_matrix: np.ndarray) -> TrackResult:
-        match self.method:
-            case TrackMethod.GLOBAL:
-                return self._global_tracking(iou_matrix)
-            case TrackMethod.GREEDY:
-                return self._greedy_tracking(iou_matrix)
+        distances = create_distance_matrix(
+            self._history.previous_positions, world_context.positions
+        )
+        match_result = self._match(distances, self.max_distance)
+        world_context = self._assign_ids(match_result, world_context)
 
-    def _update_metadata(
-        self,
-        metadata1: FrameMetaData,
-        metadata2: FrameMetaData,
-        track: Track,
-        track_ids: np.ndarray,
-    ) -> tuple[FrameMetaData, FrameMetaData]:
-        metadata1.bboxes = track.left_bboxes[: track.num_matches]
-        metadata2.bboxes = track.right_bboxes[: track.num_matches]
-        metadata1.object_ids = track_ids[: track.num_matches]
-        metadata2.object_ids = track_ids[: track.num_matches]
+        self._history.update(world_context, match_result)
+        return world_context
 
-        return metadata1, metadata2
 
-    @log(title="time tracking")
+from cv.core.frame_data import FrameMetaData
+from cv.processing.stereopairs_comporator import CompareResult
+
+
+class TmpNode:
     def process(
-        self,
-        metadata1: FrameMetaData,
-        metadata2: FrameMetaData,
-        cmp_result: CompareResult,
+        self, metadata1: FrameMetaData, metadata2: FrameMetaData, cmp_res: CompareResult
     ) -> tuple[FrameMetaData, FrameMetaData]:
-        track = Track.create_from_bboxes(metadata1.bboxes, metadata2.bboxes, cmp_result)
-
-        iou_matrix = self._create_iou_matrix(track)
-        track_result = self._track(iou_matrix)
-        track_ids = self._assign_ids(track, track_result)
-        self._update_history(track, track_ids)
-        return self._update_metadata(metadata1, metadata2, track, track_ids)
+        metadata1.bboxes = metadata1.bboxes[cmp_res.matched_left]
+        metadata2.bboxes = metadata2.bboxes[cmp_res.matched_right]
+        metadata1.object_ids = metadata1.object_ids[cmp_res.matched_left]
+        metadata2.object_ids = metadata2.object_ids[cmp_res.matched_right]
+        return metadata1, metadata2
