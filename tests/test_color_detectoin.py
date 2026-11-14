@@ -1,8 +1,8 @@
+import cv2
 import numpy as np
 
-from cv.processing.frame_processor import detect_by_color, ColorRange
 from cv.core.frame_data import FrameContext
-import cv2
+from cv.processing.frame_processor import ColorRange, detect_by_color
 
 color_range: ColorRange = ((0, 0, 30), (255, 255, 255))
 process_frame = detect_by_color([color_range])

@@ -1,10 +1,12 @@
-import numpy as np
-from cv.processing.frame_processor import detect_by_yolo
-from ultralytics import YOLO
-from cv.core.frame_data import FrameContext
-from tests.test_data.mock_data_generator import crate_test_data, create_cost_matrix
 from typing import Final
+
+import numpy as np
 from scipy.optimize import linear_sum_assignment
+from ultralytics import YOLO
+
+from cv.core.frame_data import FrameContext
+from cv.processing.frame_processor import detect_by_yolo
+from tests.test_data.mock_data_generator import crate_test_data, create_cost_matrix
 
 RESOLUTION: Final[tuple[int, int]] = (768, 576)
 

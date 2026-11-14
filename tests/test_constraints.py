@@ -1,9 +1,10 @@
+import numpy as np
+
+from cv.core.frame_data import FrameMetaData
 from cv.processing.constraints import (
     get_edge_distance_filter,
     get_object_distance_filter,
 )
-from cv.core.frame_data import FrameMetaData
-import numpy as np
 
 resolution = (0, 0)  # does not metter
 

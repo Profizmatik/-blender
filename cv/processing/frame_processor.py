@@ -1,13 +1,14 @@
-from typing import Callable, Sequence, cast
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import cast
 
 import cv2
 import numpy as np
+from ultralytics import YOLO
+from ultralytics.engine.results import Results
 
 from cv.core.frame_data import FrameContext, FrameMetaData
 from cv.core.logging import log
-from ultralytics import YOLO
-from ultralytics.engine.results import Results
 
 type ProcessFrameFn = Callable[[FrameContext], FrameMetaData]
 
